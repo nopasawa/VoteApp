@@ -1,0 +1,63 @@
+/* คุณสามารถเพิ่ม CSS ที่นี่เพื่อปรับแต่งหน้าตาเพิ่มเติม */
+body {
+    background-color: #f8f9fa;
+}
+
+.navbar {
+    margin-bottom: 2rem;
+}
+
+/* --- สไตล์สำหรับทำให้ Checkbox/Radio เด่นชัด (เวอร์ชันปรับปรุง) --- */
+
+/* กำหนดขนาด, เส้นขอบ, และพื้นหลังของปุ่ม (สถานะปกติ) */
+.form-check-input.custom-input-lg {
+    width: 1.75em;          /* กว้างขึ้น */
+    height: 1.75em;         /* สูงขึ้น */
+    background-color: #ffffff; /* พื้นหลังสีขาว */
+    border: 2px solid #6c757d; /* เส้นขอบสีเทาเข้ม */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); /* เพิ่มเงาเล็กน้อยให้ปุ่มดูมีมิติ */
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+/* กำหนดสีเมื่อปุ่มถูกเลือก (checked) */
+.form-check-input.custom-input-lg:checked {
+    background-color: #0d6efd; /* เปลี่ยนพื้นหลังเป็นสีน้ำเงิน (Bootstrap Primary) */
+    border-color: #0d6efd;      /* เปลี่ยนเส้นขอบเป็นสีเดียวกัน */
+}
+
+/* เพิ่มเงาเมื่อผู้ใช้โฟกัสที่ปุ่ม (เพื่อการเข้าถึงที่ดี) */
+.form-check-input.custom-input-lg:focus {
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    border-color: #86b7fe;
+}
+
+/* --- สไตล์ใหม่: เพิ่มพื้นหลังให้รายการเมื่อ Hover หรือ Check --- */
+
+/* กำหนดสไตล์เริ่มต้นสำหรับ container ของ form-check */
+.form-check.item-selectable {
+    transition: background-color 0.2s ease-in-out; /* เพิ่ม transition ให้ดูนุ่มนวล */
+    border-radius: .25rem; /* เพิ่มขอบมนเล็กน้อย */
+}
+
+/* เปลี่ยนสีพื้นหลังเมื่อผู้ใช้ชี้เมาส์ (hover) */
+.form-check.item-selectable:hover {
+    background-color: #e9ecef; /* สีเทาอ่อน */
+}
+
+/* เปลี่ยนสีพื้นหลังเมื่อ Checkbox/Radio ภายในถูกเลือก (checked) */
+.form-check.item-selectable.is-checked {
+    background-color: #e0f7fa; /* สีฟ้าอ่อน */
+}
+
+/* --- สไตล์ใหม่: สำหรับ Accordion ที่ถูกปิดใช้งาน --- */
+.accordion-item.disabled-accordion .accordion-button {
+    background-color: #f8f9fa; /* พื้นหลังสีเทาอ่อนมาก */
+    color: #adb5bd;           /* ตัวอักษรสีเทา */
+    cursor: not-allowed;       /* เปลี่ยน cursor เป็น "ห้าม" */
+}
+
+/* ทำให้ลูกศรของ Accordion ที่ถูกปิดใช้งานเป็นสีเทา */
+.accordion-item.disabled-accordion .accordion-button::after {
+    filter: grayscale(100%) opacity(0.5);
+}
