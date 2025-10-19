@@ -5,7 +5,7 @@ require_once 'includes/db_connect.php';
 require_login();
 
 if ($_SESSION['role'] === 'admin') {
-    header('Location: admin/index.php');
+    header('Location: /admin/index.php'); // Corrected path
     exit();
 }
 
@@ -20,36 +20,32 @@ $voted_contests_map = array_flip($stmt_voted->fetchAll(PDO::FETCH_COLUMN));
 $stmt_dates = $pdo->query("SELECT DISTINCT contest_date FROM contests WHERE contest_date IS NOT NULL ORDER BY contest_date ASC");
 $available_dates = $stmt_dates->fetchAll(PDO::FETCH_COLUMN);
 
-
-// ****** นี่คือส่วนที่แก้ไข: ตรรกะการจำวันที่ และตั้งค่าเริ่มต้นเป็นวันนี้ ******
 $today = date('Y-m-d'); // ดึงวันที่ปัจจุบัน
 
 // 2. ตรวจสอบว่ามีการเลือกวันที่มาจากฟอร์ม (GET) หรือไม่
 if (isset($_GET['date'])) {
     $selected_date = $_GET['date'];
-    // บันทึกวันที่ที่เลือกลงใน session
     $_SESSION['selected_contest_date'] = $selected_date;
 } 
-// ถ้าไม่มีการเลือกมาทาง GET, ให้ลองดึงจาก session ที่เคยบันทึกไว้
 elseif (isset($_SESSION['selected_contest_date'])) {
     $selected_date = $_SESSION['selected_contest_date'];
 } 
-// ถ้าไม่มีทั้งสองอย่าง ให้ตั้งค่าเริ่มต้นเป็นวันที่ปัจจุบัน
 else {
     $selected_date = $today;
 }
 
-
 // --- 1. ดึงข้อมูลการประกวดทั้งหมด (กรองตามวันที่ที่เลือก) ---
 $sql = "SELECT * FROM contests";
 $params = [];
-
 $where_clauses = [];
 
 if ($selected_date !== 'all' && !empty($selected_date)) {
     $where_clauses[] = "contest_date = ?";
     $params[] = $selected_date;
 }
+
+// Only show 'active' contests on the judge index page
+$where_clauses[] = "status = 'active'"; // Filter only active contests
 
 if (!empty($where_clauses)) {
     $sql .= " WHERE " . implode(' AND ', $where_clauses);
@@ -60,7 +56,6 @@ $sql .= " ORDER BY id ASC";
 $stmt_contests = $pdo->prepare($sql);
 $stmt_contests->execute($params);
 $contests = $stmt_contests->fetchAll();
-
 
 // --- 2. ดึงเกณฑ์ทั้งหมดจากฐานข้อมูล (Dynamic) ---
 $stmt_criteria = $pdo->query("SELECT * FROM criteria ORDER BY part, display_order ASC");
@@ -88,13 +83,7 @@ function find_most_frequent($arr) {
 ?>
 
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center my-4">
-        <h1 class="mb-0">📝 รายการประกวด</h1>
-        <a href="summary_results.php" class="btn btn-primary btn-lg">
-            <i class="bi bi-bar-chart-line-fill"></i> ดูผลสรุปคะแนนทั้งหมด
-        </a>
-    </div>
-
+    <h1 class="my-4 text-center">📝 รายการประกวด</h1>
     <?php if (isset($_SESSION['message_error'])): ?>
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
             <?php echo $_SESSION['message_error']; unset($_SESSION['message_error']); ?>
@@ -104,7 +93,7 @@ function find_most_frequent($arr) {
     
     <div class="card mb-4">
         <div class="card-body">
-            <form method="GET" action="index.php" id="date-filter-form" class="row g-3 align-items-center">
+            <form method="GET" action="/index.php" id="date-filter-form" class="row g-3 align-items-center">
                 <div class="col-auto">
                     <label for="date-filter" class="col-form-label"><strong><i class="bi bi-calendar-event"></i> กรองตามวันที่ประกวด:</strong></label>
                 </div>
@@ -119,7 +108,8 @@ function find_most_frequent($arr) {
                     </select>
                 </div>
                 <div class="col-auto">
-                    <a href="index.php?date=all" class="btn btn-outline-secondary">ล้างค่า</a>
+                 
+                    <a href="/index.php?date=all" class="btn btn-outline-secondary">ล้างค่า</a>
                 </div>
             </form>
         </div>
@@ -144,7 +134,7 @@ function find_most_frequent($arr) {
                 } elseif ($has_voted) {
                     $btn_class = 'btn-success';
                     $btn_icon = 'bi-check-circle-fill';
-                    $btn_text = 'ลงคะแนนแล้ว';
+                    $btn_text = 'ลงคะแนนแล้ว (แก้ไข)';
                 } else {
                     $btn_class = 'btn-primary';
                     $btn_icon = 'bi-pencil-square';
@@ -174,10 +164,10 @@ function find_most_frequent($arr) {
         </div>
     <?php else: ?>
         <div class="alert alert-info text-center" role="alert">
-            <?php if ($selected_date !== 'all'): ?>
-                ไม่พบรายการประกวดสำหรับวันที่ที่เลือก
+            <?php if ($selected_date !== 'all' && !empty($selected_date)): ?>
+                ไม่พบรายการประกวดสำหรับวันที่ <?php echo date("d F Y", strtotime($selected_date)); ?>
             <?php else: ?>
-                ยังไม่มีรายการประกวดในระบบ
+                ยังไม่มีรายการประกวดที่เปิดให้ลงคะแนนในระบบ
             <?php endif; ?>
         </div>
     <?php endif; ?>
@@ -185,11 +175,12 @@ function find_most_frequent($arr) {
 
 <?php foreach ($contests as $contest): ?>
     <?php
+    // --- ประมวลผลข้อมูลสำหรับ Modal นี้โดยเฉพาะ ---
     $stmt_scores = $pdo->prepare("SELECT criterion_key, score FROM scores WHERE entry_id = ?");
     $stmt_scores->execute([$contest['id']]);
     $all_scores = $stmt_scores->fetchAll();
 
-    $part1_selection_texts = [];
+    $part1_choices = [];
     $part2_totals = [];
     if (isset($criteria_by_part['part2'])) {
         foreach ($criteria_by_part['part2'] as $c) {
@@ -200,14 +191,17 @@ function find_most_frequent($arr) {
     $part3_impact_choices = [];
 
     foreach ($all_scores as $score) {
-        if (isset($part1_key_map[$score['criterion_key']])) {
-            $part1_selection_texts[] = $part1_key_map[$score['criterion_key']];
+        // Corrected check for Part 1 - using criterion_key directly
+         if (isset($part1_key_map[$score['criterion_key']]) && $score['score'] == 1) {
+            $part1_choices[] = $score['criterion_key']; // Store the key
         } 
         elseif (array_key_exists($score['criterion_key'], $part2_totals)) { $part2_totals[$score['criterion_key']] += $score['score']; } 
         elseif ($score['criterion_key'] == 'part3_process') { $part3_process_choices[] = $score['score']; } 
         elseif ($score['criterion_key'] == 'part3_impact') { $part3_impact_choices[] = $score['score']; }
     }
     
+    // Get unique selected keys and then map them to titles
+    $final_part1_selection_keys = array_keys(array_count_values($part1_choices));
     $final_part3_process = find_most_frequent($part3_process_choices);
     $final_part3_impact = find_most_frequent($part3_impact_choices);
     ?>
@@ -228,10 +222,12 @@ function find_most_frequent($arr) {
                             <tbody>
                                 <tr class="table-group-divider"><td colspan="2" class="fw-bold bg-light">Part 1 : พิจารณา Area & Topic</td></tr>
                                 <tr>
-                                    <td>Area & Topic ที่เลือก</td>
+                                    <td>Area & Topic ที่เลือก (ส่วนใหญ่)</td>
                                     <td class="text-center">
                                         <?php
-                                        echo empty($part1_selection_texts) ? '-' : implode(', ', array_unique($part1_selection_texts));
+                                        $selection_texts = [];
+                                        foreach ($final_part1_selection_keys as $key) { $selection_texts[] = $part1_key_map[$key] ?? 'N/A'; }
+                                        echo empty($selection_texts) ? '-' : implode(', ', $selection_texts);
                                         ?>
                                     </td>
                                 </tr>
