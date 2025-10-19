@@ -95,11 +95,11 @@ $judge_counter = 1;
 
 if (!empty($part2_keys)) {
     $placeholders = implode(',', array_fill(0, count($part2_keys), '?'));
-    $sql = "SELECT entry_id, user_id, u.role, SUM(score) as total_part2
+    $sql = "SELECT entry_id, user_id, u.full_name, SUM(score) as total_part2
             FROM scores s
             JOIN users u ON s.user_id = u.id
             WHERE s.criterion_key IN ($placeholders) AND u.role = 'judge'
-            GROUP BY s.entry_id, s.user_id";
+            GROUP BY s.entry_id, s.user_id, u.full_name"; // เพิ่ม full_name
     
     $stmt_part2 = $pdo->prepare($sql);
     $stmt_part2->execute($part2_keys);
@@ -110,7 +110,7 @@ if (!empty($part2_keys)) {
         $entry_id = $row['entry_id'];
         
         if (!isset($judge_id_map[$user_id])) {
-            $judge_id_map[$user_id] = "กรรมการท่านที่ " . $judge_counter++;
+            $judge_id_map[$user_id] = $row['full_name']; // ใช้ชื่อกรรมการจริง
         }
         
         $part2_judge_totals[$user_id][$entry_id] = $row['total_part2'];
@@ -120,80 +120,54 @@ if (!empty($part2_keys)) {
 // --- 6. คำนวณ Min/Max/Average ของแต่ละ Contest ---
 $part2_contest_stats = [];
 foreach ($contests as $contest) {
-    $scores_for_this_contest = [];
+    $contest_id = $contest['id'];
+    $scores_for_this_contest_raw = [];
     foreach ($judge_id_map as $user_id => $judge_name) {
-        $scores_for_this_contest[] = $part2_judge_totals[$user_id][$contest['id']] ?? 0;
+        $scores_for_this_contest_raw[] = $part2_judge_totals[$user_id][$contest_id] ?? 0;
     }
 
-    if (!empty($scores_for_this_contest)) {
-        $min_score = min($scores_for_this_contest);
-        $max_score = max($scores_for_this_contest);
-        $sum_of_black = 0;
-        $count_of_black = 0;
+    $scores_for_this_contest = array_filter($scores_for_this_contest_raw, function($score) { return $score > 0; });
+
+    $count_valid_scores = count($scores_for_this_contest);
+    $min_score_to_cut = null;
+    $max_score_to_cut = null;
+    $average = 0;
+
+    if ($count_valid_scores === 0) {
         $average = 0;
-        
-        if ($min_score == $max_score) {
-            $average = $min_score;
-        } else {
-            foreach ($scores_for_this_contest as $score) {
-                if ($score != $min_score && $score != $max_score) {
-                    $sum_of_black += $score;
-                    $count_of_black++;
-                }
-            }
-            $average = ($count_of_black > 0) ? ($sum_of_black / $count_of_black) : 0;
-        }
-
-        $part2_contest_stats[$contest['id']] = [
-            'min' => $min_score,
-            'max' => $max_score,
-            'average' => $average
-        ];
-        
+    } elseif ($count_valid_scores <= 2) {
+        $average = array_sum($scores_for_this_contest) / $count_valid_scores;
     } else {
-        $part2_contest_stats[$contest['id']] = ['min' => null, 'max' => null, 'average' => 0];
+        $min_score_to_cut = min($scores_for_this_contest);
+        $max_score_to_cut = max($scores_for_this_contest);
+        $scores_for_avg = $scores_for_this_contest;
+        $max_key = array_search($max_score_to_cut, $scores_for_avg); if ($max_key !== false) unset($scores_for_avg[$max_key]);
+        $min_key = array_search($min_score_to_cut, $scores_for_avg); if ($min_key !== false) unset($scores_for_avg[$min_key]);
+        $remaining_count = count($scores_for_avg);
+        $average = ($remaining_count > 0) ? (array_sum($scores_for_avg) / $remaining_count) : 0;
     }
+
+    $part2_contest_stats[$contest_id] = [
+        'min_to_cut' => $min_score_to_cut,
+        'max_to_cut' => $max_score_to_cut,
+        'average' => $average,
+        'count_valid_scores' => $count_valid_scores 
+    ];
 }
 ?>
 
 <style>
-    .sticky-col {
-        position: -webkit-sticky;
-        position: sticky;
-        left: 0;
-        z-index: 2;
-        vertical-align: middle;
-    }
-    
-    thead th {
-        position: -webkit-sticky;
-        position: sticky;
-        top: 0;
-        z-index: 3;
-    }
-
-    thead .sticky-col {
-        z-index: 4 !important; 
-    }
-    
+    /* ... CSS styles ... */
+    .sticky-col { position: sticky; left: 0; z-index: 2; vertical-align: middle; }
+    thead th { position: sticky; top: 0; z-index: 3; }
+    thead .sticky-col { z-index: 4 !important; }
     .table-light .sticky-col { background-color: #f8f9fa; }
     tbody .sticky-col { background-color: #ffffff; }
     .table-group-divider > .sticky-col { background-color: #f8f9fa; }
     .table-info .sticky-col { background-color: #cff4fc; }
     .table-dark .sticky-col { background-color: #212529; }
-
-    .uniform-header-cell {
-        width: 200px;
-        min-width: 200px;
-        max-width: 200px;
-        white-space: normal;
-        vertical-align: middle;
-    }
-
-    .table-responsive-sticky-header {
-        max-height: 80vh;
-        overflow-y: auto;
-    }
+    .uniform-header-cell { width: 200px; min-width: 200px; max-width: 200px; white-space: normal; vertical-align: middle; }
+    .table-responsive-sticky-header { max-height: 80vh; overflow-y: auto; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -260,6 +234,11 @@ foreach ($contests as $contest) {
                         <?php if (empty($judge_id_map)): ?>
                             <tr><td colspan="<?php echo count($contests) + 1; ?>" class="text-center text-muted">ยังไม่มีกรรมการลงคะแนนในส่วนนี้</td></tr>
                         <?php else: ?>
+                            <?php 
+                            // ****** ส่วนที่แก้ไข: สร้าง flag นอก loop ******
+                            $max_highlighted_flags = array_fill_keys(array_column($contests, 'id'), false);
+                            $min_highlighted_flags = array_fill_keys(array_column($contests, 'id'), false);
+                            ?>
                             <?php foreach ($judge_id_map as $user_id => $judge_name): ?>
                             <tr>
                                 <td class="sticky-col"><?php echo $judge_name; ?> (รวม Part 2)</td>
@@ -268,15 +247,23 @@ foreach ($contests as $contest) {
                                     <?php
                                     $score = $part2_judge_totals[$user_id][$contest['id']] ?? 0;
                                     $contest_id = $contest['id'];
-                                    $min_score = $part2_contest_stats[$contest_id]['min'];
-                                    $max_score = $part2_contest_stats[$contest_id]['max'];
                                     
+                                    $min_to_cut = $part2_contest_stats[$contest_id]['min_to_cut']; 
+                                    $max_to_cut = $part2_contest_stats[$contest_id]['max_to_cut'];
+                                    $count_valid = $part2_contest_stats[$contest_id]['count_valid_scores'];
+
                                     $style_class = '';
-                                    if ($min_score !== $max_score) {
-                                        if ($score == $max_score) {
+                                    
+                                    if ($score > 0 && $count_valid >= 3) {
+                                        // Highlight Max (Blue) only once per contest column
+                                        if ($max_to_cut !== null && $score == $max_to_cut && !$max_highlighted_flags[$contest_id]) {
                                             $style_class = 'text-primary';
-                                        } elseif ($score == $min_score) {
+                                            $max_highlighted_flags[$contest_id] = true; // Mark as highlighted for this column
+                                        }
+                                        // Highlight Min (Red) only once per contest column
+                                        elseif ($min_to_cut !== null && $score == $min_to_cut && !$min_highlighted_flags[$contest_id]) {
                                             $style_class = 'text-danger';
+                                            $min_highlighted_flags[$contest_id] = true; // Mark as highlighted for this column
                                         }
                                     }
                                     ?>
@@ -289,7 +276,7 @@ foreach ($contests as $contest) {
                         <?php endif; ?>
                         
                         <tr class="table-info fw-bold">
-                            <td class="text-end sticky-col">ค่าเฉลี่ย (ไม่รวม Min/Max)</td>
+                            <td class="text-end sticky-col">ค่าเฉลี่ย (ตามเงื่อนไขใหม่)</td>
                             <?php foreach ($contests as $contest): ?>
                                 <td class="text-center">
                                     <?php
@@ -401,40 +388,34 @@ foreach ($contests as $contest) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // ... JavaScript เดิมสำหรับ Font Size ...
     const mainContainer = document.querySelector('main.container');
     if (mainContainer) {
         mainContainer.classList.remove('container');
         mainContainer.classList.add('container-fluid');
     }
-
     const target = document.getElementById('report-table-wrapper');
     const increaseBtn = document.getElementById('font-increase-btn');
     const decreaseBtn = document.getElementById('font-decrease-btn');
     const resetBtn = document.getElementById('font-reset-btn');
-    
     const FONT_STORAGE_KEY = 'summary_report_font_size';
     const FONT_STEP = 1;
-
     function applyFontSize(size) {
         target.style.fontSize = size + 'px';
         localStorage.setItem(FONT_STORAGE_KEY, size);
     }
-
     const savedSize = localStorage.getItem(FONT_STORAGE_KEY);
     if (savedSize) {
         target.style.fontSize = savedSize + 'px';
     }
-
     increaseBtn.addEventListener('click', () => {
         let currentSize = parseFloat(window.getComputedStyle(target, null).getPropertyValue('font-size'));
         applyFontSize(currentSize + FONT_STEP);
     });
-
     decreaseBtn.addEventListener('click', () => {
         let currentSize = parseFloat(window.getComputedStyle(target, null).getPropertyValue('font-size'));
         applyFontSize(currentSize - FONT_STEP);
     });
-
     resetBtn.addEventListener('click', () => {
         target.style.fontSize = '';
         localStorage.removeItem(FONT_STORAGE_KEY);
